@@ -5,7 +5,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User
+
+from app.models import User, Wallet
 from app.schemas import UserCreate, UserOut
 from app.security import hash_password, verify_password, create_access_token
 
@@ -23,6 +24,9 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
 
     try:
+        db.flush()  # assigns new_user.id without fully committing yet
+        new_wallet = Wallet(user_id=new_user.id)
+        db.add(new_wallet)
         db.commit()
     except IntegrityError:
         db.rollback()
