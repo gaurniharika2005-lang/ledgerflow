@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Integer, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, Numeric, Integer, ForeignKey, Enum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -28,3 +28,16 @@ class Wallet(Base):
     version = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class Transaction(Base):
+    __tablename__ = "transactions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    idempotency_key = Column(String, unique=True, nullable=False, index=True)
+    sender_wallet_id = Column(UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=False)
+    receiver_wallet_id = Column(UUID(as_uuid=True), ForeignKey("wallets.id"), nullable=False)
+    amount = Column(Numeric(18, 2), nullable=False)
+    currency = Column(String, nullable=False, default="INR")
+    status = Column(String, nullable=False, default="success")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
