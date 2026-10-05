@@ -1,8 +1,10 @@
 import uuid
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
@@ -78,3 +80,22 @@ def transfer(
 
     db.refresh(new_transaction)
     return new_transaction
+
+
+@router.get("/history", response_model=List[TransactionOut])
+def get_history(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
+
+    transactions = (
+        db.query(Transaction)
+        .filter(
+            or_(
+                Transaction.sender_wallet_id == wallet.id,
+                Transaction.receiver_wallet_id == wallet.id,
+            )
+        )
+        .order_by(Transaction.created_at.desc())
+        .all()
+    )
+
+    return transactions
