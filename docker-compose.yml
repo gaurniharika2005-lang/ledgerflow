@@ -12,5 +12,16 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  test_db:
+    image: postgres:16
+    container_name: ledgerflow_test_db
+    restart: always
+    environment:
+      POSTGRES_USER: ledgerflow_user
+      POSTGRES_PASSWORD: ledgerflow_pass
+      POSTGRES_DB: ledgerflow_test_db
+    ports:
+      - "5433:5432"
+
 volumes:
   pgdata:
