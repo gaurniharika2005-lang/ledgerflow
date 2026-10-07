@@ -8,8 +8,9 @@ from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Wallet, Transaction
+from app.models import User, Wallet, Transaction, FraudFlag
 from app.schemas import TransferRequest, TransactionOut
+from app.fraud import check_fraud
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -57,6 +58,8 @@ def transfer(
     if sender_wallet.balance < transfer_in.amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
+    fraud_reason = check_fraud(db, sender_wallet.id, transfer_in.amount)
+
     sender_wallet.balance -= transfer_in.amount
     sender_wallet.version += 1
 
@@ -68,9 +71,14 @@ def transfer(
         sender_wallet_id=sender_wallet.id,
         receiver_wallet_id=receiver_wallet.id,
         amount=transfer_in.amount,
-        status="success",
+        status="flagged" if fraud_reason else "success",
     )
     db.add(new_transaction)
+    db.flush()
+
+    if fraud_reason:
+        flag = FraudFlag(transaction_id=new_transaction.id, reason=fraud_reason)
+        db.add(flag)
 
     try:
         db.commit()
