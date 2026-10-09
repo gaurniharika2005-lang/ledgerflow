@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
+
 from pydantic import BaseModel, EmailStr
 
 
@@ -47,3 +49,18 @@ class TransactionOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class FraudFlagOut(BaseModel):
+    id: uuid.UUID
+    transaction_id: uuid.UUID
+    reason: str
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FraudFlagReview(BaseModel):
+    status: Literal["cleared", "confirmed"]
