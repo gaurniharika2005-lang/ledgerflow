@@ -31,8 +31,6 @@ def transfer(
     if existing:
         return existing
 
-    sender_wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
-
     receiver_user = db.query(User).filter(User.email == transfer_in.receiver_email).first()
     if not receiver_user:
         raise HTTPException(status_code=404, detail="Receiver not found")
@@ -40,20 +38,26 @@ def transfer(
     if receiver_user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot transfer to yourself")
 
-    receiver_wallet = db.query(Wallet).filter(Wallet.user_id == receiver_user.id).first()
+    # Column-only queries return plain values, so nothing stale is cached in the session.
+    sender_wallet_id = db.query(Wallet.id).filter(Wallet.user_id == current_user.id).scalar()
+    receiver_wallet_id = db.query(Wallet.id).filter(Wallet.user_id == receiver_user.id).scalar()
+    if sender_wallet_id is None or receiver_wallet_id is None:
+        raise HTTPException(status_code=404, detail="Wallet not found")
 
-    sender_wallet = (
+    # Lock both wallets in one query, always in id order, so two transfers can
+    # never hold locks in opposite orders (no deadlocks). populate_existing()
+    # makes sure the freshly locked values replace anything cached.
+    locked_wallets = (
         db.query(Wallet)
-        .filter(Wallet.id == sender_wallet.id)
+        .filter(Wallet.id.in_([sender_wallet_id, receiver_wallet_id]))
+        .order_by(Wallet.id)
         .with_for_update()
-        .first()
+        .populate_existing()
+        .all()
     )
-    receiver_wallet = (
-        db.query(Wallet)
-        .filter(Wallet.id == receiver_wallet.id)
-        .with_for_update()
-        .first()
-    )
+    wallets = {wallet.id: wallet for wallet in locked_wallets}
+    sender_wallet = wallets[sender_wallet_id]
+    receiver_wallet = wallets[receiver_wallet_id]
 
     if sender_wallet.balance < transfer_in.amount:
         raise HTTPException(status_code=400, detail="Insufficient balance")
