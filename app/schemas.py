@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class UserCreate(BaseModel):
@@ -35,7 +35,7 @@ class WalletOut(BaseModel):
 
 class TransferRequest(BaseModel):
     receiver_email: EmailStr
-    amount: Decimal
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2, allow_inf_nan=False)
 
 
 class TransactionOut(BaseModel):

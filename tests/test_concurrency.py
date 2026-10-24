@@ -157,3 +157,16 @@ def test_concurrent_duplicate_requests_charge_once(concurrent_env):
     assert len({response.json()["id"] for response in responses}) == 1
     assert get_balance(Session, "sender@test.com") == 900
     assert get_balance(Session, "receiver@test.com") == 100
+
+def test_amount_with_extra_decimals_cannot_create_money(concurrent_env):
+    app, Session = concurrent_env
+    register(app, "sender@test.com")
+    register(app, "receiver@test.com")
+    set_balance(Session, "sender@test.com", 1000)
+    token = login(app, "sender@test.com")
+
+    for _ in range(20):
+        send_with_key(app, token, "receiver@test.com", "0.005", str(uuid.uuid4()))
+
+    total = get_balance(Session, "sender@test.com") + get_balance(Session, "receiver@test.com")
+    assert total == 1000
