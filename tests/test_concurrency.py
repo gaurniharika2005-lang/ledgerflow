@@ -93,3 +93,67 @@ def test_opposite_direction_transfers_do_not_deadlock(concurrent_env):
     assert codes.count(200) == 20
     total = get_balance(Session, "a@test.com") + get_balance(Session, "b@test.com")
     assert total == 2000
+
+def send_with_key(app, token, receiver_email, amount, key):
+    client = TestClient(app, raise_server_exceptions=False)
+    return client.post(
+        "/transactions/transfer",
+        params={"idempotency_key": key},
+        json={"receiver_email": receiver_email, "amount": amount},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+def test_key_reuse_with_different_amount_is_rejected(concurrent_env):
+    app, Session = concurrent_env
+    register(app, "sender@test.com")
+    register(app, "receiver@test.com")
+    set_balance(Session, "sender@test.com", 1000)
+    token = login(app, "sender@test.com")
+    key = str(uuid.uuid4())
+
+    first = send_with_key(app, token, "receiver@test.com", 100, key)
+    second = send_with_key(app, token, "receiver@test.com", 200, key)
+
+    assert first.status_code == 200
+    assert second.status_code == 422
+    assert get_balance(Session, "sender@test.com") == 900
+    assert get_balance(Session, "receiver@test.com") == 100
+
+
+def test_other_user_cannot_replay_someone_elses_key(concurrent_env):
+    app, Session = concurrent_env
+    register(app, "sender@test.com")
+    register(app, "receiver@test.com")
+    register(app, "other@test.com")
+    set_balance(Session, "sender@test.com", 1000)
+    set_balance(Session, "other@test.com", 1000)
+    sender_token = login(app, "sender@test.com")
+    other_token = login(app, "other@test.com")
+    key = str(uuid.uuid4())
+
+    first = send_with_key(app, sender_token, "receiver@test.com", 100, key)
+    stolen = send_with_key(app, other_token, "receiver@test.com", 100, key)
+
+    assert first.status_code == 200
+    assert stolen.status_code == 422
+    assert "id" not in stolen.json()
+    assert get_balance(Session, "other@test.com") == 1000
+
+
+def test_concurrent_duplicate_requests_charge_once(concurrent_env):
+    app, Session = concurrent_env
+    register(app, "sender@test.com")
+    register(app, "receiver@test.com")
+    set_balance(Session, "sender@test.com", 1000)
+    token = login(app, "sender@test.com")
+    key = str(uuid.uuid4())
+
+    responses = run_parallel(
+        [(send_with_key, app, token, "receiver@test.com", 100, key) for _ in range(10)]
+    )
+
+    codes = sorted(response.status_code for response in responses)
+    assert codes == [200] * 10, codes
+    assert len({response.json()["id"] for response in responses}) == 1
+    assert get_balance(Session, "sender@test.com") == 900
+    assert get_balance(Session, "receiver@test.com") == 100
