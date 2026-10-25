@@ -12,9 +12,16 @@ engine = create_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+def reset_schema():
+    # Always start from a clean slate. create_all() alone never alters a table
+    # that already exists, so a leftover table from an older schema would break tests.
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+
 @pytest.fixture(scope="function")
 def db_session():
-    Base.metadata.create_all(bind=engine)
+    reset_schema()
     session = TestingSessionLocal()
     try:
         yield session
@@ -38,7 +45,7 @@ def client(db_session):
 
 @pytest.fixture(scope="function")
 def concurrent_env():
-    Base.metadata.create_all(bind=engine)
+    reset_schema()
 
     def override_get_db():
         session = TestingSessionLocal()

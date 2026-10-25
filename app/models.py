@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Numeric, Integer, ForeignKey, Text, CheckConstraint,
+    Column, String, Boolean, DateTime, Numeric, Integer, ForeignKey, Text, CheckConstraint, false,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -28,6 +28,7 @@ class Wallet(Base):
     balance = Column(Numeric(18, 2), nullable=False, default=0)
     currency = Column(String, nullable=False, default="INR")
     version = Column(Integer, nullable=False, default=0)
+    is_system = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
