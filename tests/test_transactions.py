@@ -134,3 +134,36 @@ def test_invalid_amounts_are_rejected_and_valid_amount_works(client, db_session)
 
     db_session.refresh(sender_wallet)
     assert str(sender_wallet.balance) == "989.50"
+
+def test_transfer_writes_balanced_ledger_entries(client, db_session):
+    register_user(client, "sender@test.com")
+    register_user(client, "receiver@test.com")
+
+    import uuid
+    from app.models import Wallet, User, LedgerEntry
+    sender_user = db_session.query(User).filter(User.email == "sender@test.com").first()
+    receiver_user = db_session.query(User).filter(User.email == "receiver@test.com").first()
+    sender_wallet = db_session.query(Wallet).filter(Wallet.user_id == sender_user.id).first()
+    receiver_wallet = db_session.query(Wallet).filter(Wallet.user_id == receiver_user.id).first()
+    sender_wallet.balance = 1000
+    db_session.commit()
+
+    token = login_user(client, "sender@test.com")
+    response = client.post(
+        "/transactions/transfer",
+        params={"idempotency_key": "44444444-4444-4444-4444-444444444444"},
+        json={"receiver_email": "receiver@test.com", "amount": 300},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+    transaction_id = uuid.UUID(response.json()["id"])
+
+    entries = db_session.query(LedgerEntry).filter(LedgerEntry.transaction_id == transaction_id).all()
+    assert len(entries) == 2
+    assert sum(entry.amount for entry in entries) == 0
+
+    by_wallet = {entry.wallet_id: entry for entry in entries}
+    assert by_wallet[sender_wallet.id].amount == -300
+    assert by_wallet[sender_wallet.id].balance_after == 700
+    assert by_wallet[receiver_wallet.id].amount == 300
+    assert by_wallet[receiver_wallet.id].balance_after == 300

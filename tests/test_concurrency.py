@@ -170,3 +170,35 @@ def test_amount_with_extra_decimals_cannot_create_money(concurrent_env):
 
     total = get_balance(Session, "sender@test.com") + get_balance(Session, "receiver@test.com")
     assert total == 1000
+
+def get_entries(Session, email):
+    from app.models import LedgerEntry
+
+    with Session() as session:
+        user = session.query(User).filter(User.email == email).first()
+        wallet = session.query(Wallet).filter(Wallet.user_id == user.id).first()
+        rows = session.query(LedgerEntry).filter(LedgerEntry.wallet_id == wallet.id).all()
+        return [(row.amount, row.balance_after) for row in rows]
+
+
+def test_parallel_transfers_leave_a_consistent_ledger(concurrent_env):
+    app, Session = concurrent_env
+    register(app, "sender@test.com")
+    register(app, "receiver@test.com")
+    set_balance(Session, "sender@test.com", 1000)
+    token = login(app, "sender@test.com")
+
+    run_parallel([(send, app, token, "receiver@test.com", 100) for _ in range(15)])
+
+    sender_rows = get_entries(Session, "sender@test.com")
+    receiver_rows = get_entries(Session, "receiver@test.com")
+
+    # Only the 10 successful transfers wrote entries; the 5 rejected ones wrote nothing.
+    assert len(sender_rows) == 10
+    assert len(receiver_rows) == 10
+    assert sum(amount for amount, _ in sender_rows) == -1000
+    assert sum(amount for amount, _ in receiver_rows) == 1000
+
+    # Transfers are serialized by the row lock, so each balance_after appears exactly once.
+    assert sorted(after for _, after in sender_rows) == [i * 100 for i in range(10)]
+    assert sorted(after for _, after in receiver_rows) == [i * 100 for i in range(1, 11)]

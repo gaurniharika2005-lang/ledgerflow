@@ -8,7 +8,7 @@ from sqlalchemy import or_
 
 from app.database import get_db
 from app.dependencies import get_current_user
-from app.models import User, Wallet, Transaction, FraudFlag
+from app.models import User, Wallet, Transaction, FraudFlag, LedgerEntry
 from app.schemas import TransferRequest, TransactionOut
 from app.fraud import check_fraud
 
@@ -108,6 +108,24 @@ def transfer(
         db.flush()
         if fraud_reason:
             db.add(FraudFlag(transaction_id=new_transaction.id, reason=fraud_reason))
+
+        # Two signed entries per transfer. They always sum to zero.
+        db.add(
+            LedgerEntry(
+                transaction_id=new_transaction.id,
+                wallet_id=sender_wallet_id,
+                amount=-transfer_in.amount,
+                balance_after=sender_wallet.balance,
+            )
+        )
+        db.add(
+            LedgerEntry(
+                transaction_id=new_transaction.id,
+                wallet_id=receiver_wallet_id,
+                amount=transfer_in.amount,
+                balance_after=receiver_wallet.balance,
+            )
+        )
         db.commit()
     except IntegrityError:
         # Backstop: the unique constraint on idempotency_key is the final guard.
