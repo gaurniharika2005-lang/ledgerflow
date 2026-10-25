@@ -64,3 +64,7 @@ class FraudFlagOut(BaseModel):
 
 class FraudFlagReview(BaseModel):
     status: Literal["cleared", "confirmed"]
+
+class CashRequest(BaseModel):
+    user_email: EmailStr
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2, allow_inf_nan=False)

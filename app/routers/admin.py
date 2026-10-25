@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_admin
-from app.models import User, FraudFlag
-from app.schemas import FraudFlagOut, FraudFlagReview
+from app.ledger import get_system_wallet_id, move_money
+from app.models import FraudFlag, User, Wallet
+from app.schemas import CashRequest, FraudFlagOut, FraudFlagReview, TransactionOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -37,3 +38,39 @@ def review_flag(
     db.commit()
     db.refresh(flag)
     return flag
+
+
+def user_wallet_id_by_email(db: Session, email: str) -> uuid.UUID:
+    wallet_id = (
+        db.query(Wallet.id)
+        .join(User, User.id == Wallet.user_id)
+        .filter(User.email == email, Wallet.is_system.is_(False))
+        .scalar()
+    )
+    if wallet_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return wallet_id
+
+
+@router.post("/deposits", response_model=TransactionOut)
+def deposit(
+    cash_in: CashRequest,
+    idempotency_key: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user_wallet_id = user_wallet_id_by_email(db, cash_in.user_email)
+    system_wallet_id = get_system_wallet_id(db)
+    return move_money(db, system_wallet_id, user_wallet_id, cash_in.amount, idempotency_key)
+
+
+@router.post("/withdrawals", response_model=TransactionOut)
+def withdraw(
+    cash_out: CashRequest,
+    idempotency_key: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user_wallet_id = user_wallet_id_by_email(db, cash_out.user_email)
+    system_wallet_id = get_system_wallet_id(db)
+    return move_money(db, user_wallet_id, system_wallet_id, cash_out.amount, idempotency_key)
