@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import List, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -65,6 +65,27 @@ class FraudFlagOut(BaseModel):
 class FraudFlagReview(BaseModel):
     status: Literal["cleared", "confirmed"]
 
+
 class CashRequest(BaseModel):
     user_email: EmailStr
     amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2, allow_inf_nan=False)
+
+
+class WalletMismatch(BaseModel):
+    wallet_id: uuid.UUID
+    balance: Decimal
+    entries_sum: Decimal
+
+
+class UnbalancedTransaction(BaseModel):
+    transaction_id: uuid.UUID
+    entries_sum: Decimal
+    entry_count: int
+
+
+class ReconciliationReport(BaseModel):
+    balanced: bool
+    total_of_balances: Decimal
+    wallets_checked: int
+    mismatched_wallets: List[WalletMismatch]
+    unbalanced_transactions: List[UnbalancedTransaction]
