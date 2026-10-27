@@ -23,12 +23,15 @@ def find_by_key(db: Session, idempotency_key: uuid.UUID):
     )
 
 
-def replay_if_same_request(existing, sender_wallet_id, receiver_wallet_id, amount):
+def replay_if_same_request(
+    existing, sender_wallet_id, receiver_wallet_id, amount, reverses_transaction_id=None
+):
     """A key may only replay the exact request it was first used for."""
     same_request = (
         existing.sender_wallet_id == sender_wallet_id
         and existing.receiver_wallet_id == receiver_wallet_id
         and existing.amount == amount
+        and existing.reverses_transaction_id == reverses_transaction_id
     )
     if not same_request:
         raise HTTPException(
@@ -78,11 +81,13 @@ def move_money(
     receiver_wallet_id: uuid.UUID,
     amount: Decimal,
     idempotency_key: uuid.UUID,
+    reverses_transaction_id: uuid.UUID | None = None,
 ) -> Transaction:
     """Move money between two wallets.
 
     Atomic, idempotent, safe under concurrency, and writes two signed ledger
-    entries that always sum to zero.
+    entries that always sum to zero. If reverses_transaction_id is given, this
+    movement is a reversal of that transaction (allowed at most once).
     """
     # Lock both wallets in one query, always in id order, so two transfers can
     # never hold locks in opposite orders (no deadlocks). populate_existing()
@@ -104,15 +109,32 @@ def move_money(
     existing = find_by_key(db, idempotency_key)
     if existing:
         return replay_if_same_request(
-            existing, sender_wallet_id, receiver_wallet_id, amount
+            existing, sender_wallet_id, receiver_wallet_id, amount, reverses_transaction_id
         )
+
+    # Any other reversal of the same transaction uses the same two wallets, so it
+    # is serialized behind the locks we hold: if one exists now, it has committed.
+    if reverses_transaction_id is not None:
+        already_reversed = (
+            db.query(Transaction.id)
+            .filter(Transaction.reverses_transaction_id == reverses_transaction_id)
+            .first()
+        )
+        if already_reversed:
+            raise HTTPException(status_code=409, detail="Transaction has already been reversed")
 
     # Only the system wallet may go negative (it represents money held outside).
     if not sender_wallet.is_system and sender_wallet.balance < amount:
-        raise HTTPException(status_code=400, detail="Insufficient balance")
+        if reverses_transaction_id is None:
+            raise HTTPException(status_code=400, detail="Insufficient balance")
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot reverse: the receiver no longer has enough funds",
+        )
 
+    # Reversals are corrections, not new customer activity, so no fraud scoring.
     fraud_reason = None
-    if not sender_wallet.is_system:
+    if not sender_wallet.is_system and reverses_transaction_id is None:
         fraud_reason = check_fraud(db, sender_wallet_id, amount)
 
     sender_wallet.balance -= amount
@@ -127,6 +149,7 @@ def move_money(
         receiver_wallet_id=receiver_wallet_id,
         amount=amount,
         status="flagged" if fraud_reason else "success",
+        reverses_transaction_id=reverses_transaction_id,
     )
     db.add(new_transaction)
 
@@ -154,13 +177,16 @@ def move_money(
         )
         db.commit()
     except IntegrityError:
-        # Backstop: the unique constraint on idempotency_key is the final guard.
+        # Backstop: the unique constraints (idempotency key, one reversal per
+        # transaction) are the final guard.
         db.rollback()
         existing = find_by_key(db, idempotency_key)
         if existing:
             return replay_if_same_request(
-                existing, sender_wallet_id, receiver_wallet_id, amount
+                existing, sender_wallet_id, receiver_wallet_id, amount, reverses_transaction_id
             )
+        if reverses_transaction_id is not None:
+            raise HTTPException(status_code=409, detail="Transaction has already been reversed")
         raise HTTPException(status_code=409, detail="Duplicate request")
 
     db.refresh(new_transaction)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_admin
 from app.ledger import get_system_wallet_id, move_money
-from app.models import FraudFlag, User, Wallet
+from app.models import FraudFlag, Transaction, User, Wallet
 from app.reconciliation import reconcile
 from app.schemas import (
     CashRequest,
@@ -81,6 +81,30 @@ def withdraw(
     user_wallet_id = user_wallet_id_by_email(db, cash_out.user_email)
     system_wallet_id = get_system_wallet_id(db)
     return move_money(db, user_wallet_id, system_wallet_id, cash_out.amount, idempotency_key)
+
+
+@router.post("/transactions/{transaction_id}/reverse", response_model=TransactionOut)
+def reverse_transaction(
+    transaction_id: uuid.UUID,
+    idempotency_key: uuid.UUID,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    original = db.query(Transaction).filter(Transaction.id == transaction_id).first()
+    if original is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if original.reverses_transaction_id is not None:
+        raise HTTPException(status_code=400, detail="A reversal cannot itself be reversed")
+
+    # The money goes back the way it came: receiver pays, sender is repaid.
+    return move_money(
+        db,
+        original.receiver_wallet_id,
+        original.sender_wallet_id,
+        original.amount,
+        idempotency_key,
+        reverses_transaction_id=original.id,
+    )
 
 
 @router.get("/reconciliation", response_model=ReconciliationReport)

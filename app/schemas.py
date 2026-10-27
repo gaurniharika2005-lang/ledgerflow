@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -46,9 +46,11 @@ class TransactionOut(BaseModel):
     currency: str
     status: str
     created_at: datetime
+    reverses_transaction_id: Optional[uuid.UUID] = None
 
     class Config:
         from_attributes = True
+    
 
 
 class FraudFlagOut(BaseModel):

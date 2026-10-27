@@ -43,6 +43,9 @@ class Transaction(Base):
     amount = Column(Numeric(18, 2), nullable=False)
     currency = Column(String, nullable=False, default="INR")
     status = Column(String, nullable=False, default="success")
+    reverses_transaction_id = Column(
+        UUID(as_uuid=True), ForeignKey("transactions.id"), nullable=True, unique=True
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
