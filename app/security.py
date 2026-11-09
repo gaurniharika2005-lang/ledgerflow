@@ -21,6 +21,10 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 15
 
+# Fail at startup, with a clear message, instead of at the first login.
+if not JWT_SECRET_KEY or len(JWT_SECRET_KEY) < 32:
+    raise RuntimeError("JWT_SECRET_KEY must be set and at least 32 characters long")
+
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
