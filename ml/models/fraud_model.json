@@ -1,0 +1,41 @@
+{
+  "model": "logistic regression",
+  "trained_on": "2026-11-16",
+  "data": "PaySim synthetic mobile-money dataset (Kaggle: ealaxi/paysim1), feasible TRANSFER rows only",
+  "citation": "Lopez-Rojas, Elmir, Axelsson (2016). PaySim: A financial mobile money simulator for fraud detection. EMSS.",
+  "train_steps": "<= 450",
+  "features": [
+    "share",
+    "drained",
+    "dest_new",
+    "log_dest_prior"
+  ],
+  "feature_definitions": {
+    "share": "amount / sender balance before the transfer",
+    "drained": "1 if the amount equals the sender's whole balance, else 0",
+    "dest_new": "1 if the receiving wallet has received no earlier transaction, else 0",
+    "log_dest_prior": "natural log of (1 + number of earlier transactions received by the receiving wallet)"
+  },
+  "means": [
+    0.5397282220716714,
+    0.10816698528431068,
+    0.2731516471791224,
+    1.3588185133451822
+  ],
+  "scales": [
+    0.3140632041683659,
+    0.31059119204963687,
+    0.4455780793783,
+    1.0901494460866985
+  ],
+  "coefficients": [
+    0.5856631235640716,
+    3.555283309244136,
+    1.7717166630159142,
+    -0.6042838119991192
+  ],
+  "intercept": -6.238781366150602,
+  "threshold": 0.04353620847882882,
+  "false_alarm_budget": 0.01,
+  "warning": "Trained on synthetic data. Scores are illustrative, not calibrated for real customers."
+}
